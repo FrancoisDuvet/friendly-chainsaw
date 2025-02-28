@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -21,13 +23,17 @@ type Student struct {
 	Total      float64
 }
 
-type ComponentRank struct {
-	Emplid string
-	Marks  float64
-	Rank   int
+type SummaryReport struct {
+	GeneralAverages   map[string]float64 `json:"general_averages"`
+	BranchAverages    map[string]float64 `json:"branch_averages"`
+	BranchRankings    map[string][]Student `json:"branch_rankings"`
+	OverallTopStudents []Student `json:"overall_top_students"`
 }
 
 func main() {
+	exportFormat := flag.String("export", "", "Export final report to specified format (e.g., json)")
+	flag.Parse()
+
 	f, err := excelize.OpenFile("CSF111_202425_01_GradeBook_stripped.xlsx")
 	if err != nil {
 		fmt.Println("Error opening file:", err)
@@ -52,14 +58,16 @@ func main() {
 		if i == 0 {
 			continue // Skip header
 		}
-		student := parseStudent(row)
-		students = append(students, student)
+		students = append(students, parseStudent(row))
 	}
 
-	computeGeneralAverages(students)
-	computeBranchWiseAverages(students)
-	computeRankings(students)
-	computeBranchWiseRankings(students)
+	report := generateReport(students)
+
+	if *exportFormat == "json" {
+		exportToJson(report)
+	} else {
+		printReport(report)
+	}
 }
 
 func parseStudent(row []string) Student {
@@ -81,120 +89,96 @@ func parseFloat(s string) float64 {
 	return f
 }
 
-func computeGeneralAverages(students []Student) {
-	var sumQuiz, sumMidSem, sumLabTest, sumWeeklyLabs, sumPreCompre, sumCompre, sumTotal float64
+func generateReport(students []Student) SummaryReport {
+	generalAverages := GeneralAverages(students)
+	branchAverages := BranchWiseAverages(students)
+	branchRankings := BranchWiseRankings(students)
+	overallTopStudents := OverallTopStudents(students)
+
+	return SummaryReport{
+		GeneralAverages:    generalAverages,
+		BranchAverages:     branchAverages,
+		BranchRankings:     branchRankings,
+		OverallTopStudents: overallTopStudents,
+	}
+}
+
+func OverallTopStudents(students []Student) []Student {
+	sort.Slice(students, func(i, j int) bool {
+		return students[i].Total > students[j].Total
+	})
+	if len(students) > 3 {
+		return students[:3]
+	}
+	return students
+}
+
+func GeneralAverages(students []Student) map[string]float64 {
+	averages := make(map[string]float64)
+	var sumTotal float64
 	count := float64(len(students))
 
 	for _, s := range students {
-		sumQuiz += s.Quiz
-		sumMidSem += s.MidSem
-		sumLabTest += s.LabTest
-		sumWeeklyLabs += s.WeeklyLabs
-		sumPreCompre += s.PreCompre
-		sumCompre += s.Compre
 		sumTotal += s.Total
 	}
-
-	fmt.Println("General Averages:")
-	fmt.Printf("Quiz: %.2f\n", sumQuiz/count)
-	fmt.Printf("Mid-Sem: %.2f\n", sumMidSem/count)
-	fmt.Printf("Lab Test: %.2f\n", sumLabTest/count)
-	fmt.Printf("Weekly Labs: %.2f\n", sumWeeklyLabs/count)
-	fmt.Printf("Pre-Compre: %.2f\n", sumPreCompre/count)
-	fmt.Printf("Compre: %.2f\n", sumCompre/count)
-	fmt.Printf("Total: %.2f\n\n", sumTotal/count)
+	averages["Total"] = sumTotal / count
+	return averages
 }
 
-func computeBranchWiseAverages(students []Student) {
-	branchTotals := make(map[string]float64)
+func BranchWiseAverages(students []Student) map[string]float64 {
+	branchAverages := make(map[string]float64)
 	branchCounts := make(map[string]int)
 
 	for _, s := range students {
-		if strings.HasPrefix(s.CampusID, "2024") {
-			branch := s.CampusID[4:8]
-			branchTotals[branch] += s.Total
-			branchCounts[branch]++
-		}
+		branch := s.CampusID[4:8]
+		branchAverages[branch] += s.Total
+		branchCounts[branch]++
 	}
 
-	fmt.Println("Branch-wise Averages (2024 batch):")
-	for branch, total := range branchTotals {
-		avg := total / float64(branchCounts[branch])
-		fmt.Printf("%s: %.2f\n", branch, avg)
+	for branch, total := range branchAverages {
+		branchAverages[branch] = total / float64(branchCounts[branch])
 	}
-	fmt.Println()
+	return branchAverages
 }
 
-func computeRankings(students []Student) {
-	components := []struct {
-		name  string
-		score func(Student) float64
-	}{
-		{"Quiz", func(s Student) float64 { return s.Quiz }},
-		{"Mid-Sem", func(s Student) float64 { return s.MidSem }},
-		{"Lab Test", func(s Student) float64 { return s.LabTest }},
-		{"Weekly Labs", func(s Student) float64 { return s.WeeklyLabs }},
-		{"Pre-Compre", func(s Student) float64 { return s.PreCompre }},
-		{"Compre", func(s Student) float64 { return s.Compre }},
-		{"Total", func(s Student) float64 { return s.Total }},
-	}
-
-	for _, comp := range components {
-		ranks := make([]ComponentRank, len(students))
-		for i, s := range students {
-			ranks[i] = ComponentRank{
-				Emplid: s.Emplid,
-				Marks:  comp.score(s),
-			}
-		}
-
-		sort.Slice(ranks, func(i, j int) bool {
-			return ranks[i].Marks > ranks[j].Marks
-		})
-
-		fmt.Printf("Top 3 students for %s:\n", comp.name)
-		for i := 0; i < 3 && i < len(ranks); i++ {
-			fmt.Printf("%s. Emplid: %s, Marks: %.2f, Rank: %s\n",
-				ordinal(i+1), ranks[i].Emplid, ranks[i].Marks, ordinal(i+1))
-		}
-		fmt.Println()
-	}
-}
-
-func computeBranchWiseRankings(students []Student) {
+func BranchWiseRankings(students []Student) map[string][]Student {
+	branchRankings := make(map[string][]Student)
 	branchStudents := make(map[string][]Student)
 
 	for _, s := range students {
-		if strings.HasPrefix(s.CampusID, "2024") {
-			branch := s.CampusID[4:8]
-			branchStudents[branch] = append(branchStudents[branch], s)
-		}
+		branch := s.CampusID[4:8]
+		branchStudents[branch] = append(branchStudents[branch], s)
 	}
 
-	fmt.Println("Branch-wise Top 3 Students (2024 batch):")
-	for branch, students := range branchStudents {
-		sort.Slice(students, func(i, j int) bool {
-			return students[i].Total > students[j].Total
+	for branch, studs := range branchStudents {
+		sort.Slice(studs, func(i, j int) bool {
+			return studs[i].Total > studs[j].Total
 		})
+		branchRankings[branch] = studs
+	}
+	return branchRankings
+}
 
-		fmt.Printf("Top 3 students for branch %s:\n", branch)
-		for i := 0; i < 3 && i < len(students); i++ {
-			fmt.Printf("%s. Emplid: %s, Total Marks: %.2f, Rank: %s\n",
-				ordinal(i+1), students[i].Emplid, students[i].Total, ordinal(i+1))
-		}
-		fmt.Println()
+func exportToJson(report SummaryReport) {
+	file, err := os.Create("summary_report.json")
+	if err != nil {
+		fmt.Println("Error creating JSON file:", err)
+		return
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(report); err != nil {
+		fmt.Println("Error writing to JSON file:", err)
+	} else {
+		fmt.Println("Summary report successfully exported to summary_report.json")
 	}
 }
 
-func ordinal(n int) string {
-	switch n {
-	case 1:
-		return "1st"
-	case 2:
-		return "2nd"
-	case 3:
-		return "3rd"
-	default:
-		return fmt.Sprintf("%dth", n)
-	}
+func printReport(report SummaryReport) {
+	fmt.Println("General Averages:", report.GeneralAverages)
+	fmt.Println("Branch Averages:", report.BranchAverages)
+	fmt.Println("Branch Rankings:", report.BranchRankings)
+	fmt.Println("Overall Top Students:", report.OverallTopStudents)
 }
