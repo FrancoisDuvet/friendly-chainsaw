@@ -12,6 +12,7 @@ import (
 )
 
 type Student struct {
+	ClassNo    string
 	Emplid     string
 	CampusID   string
 	Quiz       float64
@@ -31,7 +32,8 @@ type SummaryReport struct {
 }
 
 func main() {
-	exportFormat := flag.String("export", "", "Export final report to specified format (e.g., json)")
+	exportFormat := flag.String("export", "", "Export final report to json format")
+	classFilter := flag.String("class", "", "Filter by input Class No.")
 	flag.Parse()
 
 	f, err := excelize.OpenFile("CSF111_202425_01_GradeBook_stripped.xlsx")
@@ -43,7 +45,7 @@ func main() {
 
 	sheetName := f.GetSheetName(0)
 	if sheetName == "" {
-		fmt.Println("No sheets found in the workbook")
+		fmt.Println("No sheets found in the file")
 		return
 	}
 
@@ -56,9 +58,12 @@ func main() {
 	var students []Student
 	for i, row := range rows {
 		if i == 0 {
-			continue // Skip header
+			continue // Skipped 1st line
 		}
-		students = append(students, parseStudent(row))
+		student := parseStudent(row)
+		if *classFilter == "" || student.ClassNo == *classFilter {
+			students = append(students, student)
+		}
 	}
 
 	report := generateReport(students)
@@ -72,6 +77,7 @@ func main() {
 
 func parseStudent(row []string) Student {
 	return Student{
+		ClassNo:    row[1],
 		Emplid:     row[2],
 		CampusID:   row[3],
 		Quiz:       parseFloat(row[4]),
