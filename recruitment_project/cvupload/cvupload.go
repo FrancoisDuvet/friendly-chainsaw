@@ -87,7 +87,7 @@ func extractTextFromPDF(filePath string) (string, error) {
     return buf.String(), nil
 }
 
-func main() {
+func uploadcv() {
     r := gin.Default()
 
     // CV upload route

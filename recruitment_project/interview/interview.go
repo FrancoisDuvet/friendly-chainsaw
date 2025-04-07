@@ -10,13 +10,25 @@ import (
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
 )
 
-// Mock database
-var interviews = []Interview{}
+// Database connection
+var db *gorm.DB
 
+func ConnectDB() *gorm.DB {
+    dsn := "host=localhost user=postgres password=mysecretpassword dbname=postgres port=5431 sslmode=disable"
+    database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        panic("failed to connect to db")
+    }
+    return database
+}
+
+// Interview struct for database
 type Interview struct {
-    ID           string    `json:"id"`
+    ID           string    `gorm:"primaryKey" json:"id"`
     JobID        string    `json:"job_id"`
     Applicant    string    `json:"applicant"`
     Recruiter    string    `json:"recruiter"`
@@ -36,7 +48,12 @@ func scheduleInterviewHandler(c *gin.Context) {
     // Generate a unique interview ID
     interview.ID = uuid.New().String()
     interview.Status = "Pending"
-    interviews = append(interviews, interview)
+
+    // Save to database
+    if err := db.Create(&interview).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to schedule interview"})
+        return
+    }
 
     // Send email notification to the applicant
     go sendEmail(interview.Applicant, "Interview Scheduled", fmt.Sprintf("An interview has been scheduled for you on %s.", interview.ScheduledAt))
@@ -57,24 +74,35 @@ func respondToInterviewHandler(c *gin.Context) {
     }
 
     // Find the interview
-    for i, interview := range interviews {
-        if interview.ID == response.InterviewID {
-            if response.Action == "accept" {
-                interviews[i].Status = "Accepted"
-                go sendEmail(interview.Recruiter, "Interview Accepted", fmt.Sprintf("The applicant has accepted the interview scheduled on %s.", interview.ScheduledAt))
-                c.JSON(http.StatusOK, gin.H{"message": "Interview accepted"})
-                return
-            } else if response.Action == "propose" {
-                interviews[i].Status = "Rescheduled"
-                interviews[i].ProposedTime = response.ProposedTime
-                go sendEmail(interview.Recruiter, "Interview Reschedule Proposed", fmt.Sprintf("The applicant has proposed a new time: %s.", response.ProposedTime))
-                c.JSON(http.StatusOK, gin.H{"message": "Proposed a new time for the interview"})
-                return
-            }
+    var interview Interview
+    if err := db.First(&interview, "id = ?", response.InterviewID).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Interview not found"})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
         }
+        return
     }
 
-    c.JSON(http.StatusNotFound, gin.H{"error": "Interview not found"})
+    // Update interview status
+    if response.Action == "accept" {
+        interview.Status = "Accepted"
+        if err := db.Save(&interview).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update interview status"})
+            return
+        }
+        go sendEmail(interview.Recruiter, "Interview Accepted", fmt.Sprintf("The applicant has accepted the interview scheduled on %s.", interview.ScheduledAt))
+        c.JSON(http.StatusOK, gin.H{"message": "Interview accepted"})
+    } else if response.Action == "propose" {
+        interview.Status = "Rescheduled"
+        interview.ProposedTime = response.ProposedTime
+        if err := db.Save(&interview).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to propose new time"})
+            return
+        }
+        go sendEmail(interview.Recruiter, "Interview Reschedule Proposed", fmt.Sprintf("The applicant has proposed a new time: %s.", response.ProposedTime))
+        c.JSON(http.StatusOK, gin.H{"message": "Proposed a new time for the interview"})
+    }
 }
 
 // View all interviews (Recruiter or Applicant)
@@ -82,10 +110,10 @@ func viewInterviewsHandler(c *gin.Context) {
     user := c.Query("user")
     var userInterviews []Interview
 
-    for _, interview := range interviews {
-        if interview.Recruiter == user || interview.Applicant == user {
-            userInterviews = append(userInterviews, interview)
-        }
+    // Fetch interviews for the user
+    if err := db.Where("recruiter = ? OR applicant = ?", user, user).Find(&userInterviews).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch interviews"})
+        return
     }
 
     c.JSON(http.StatusOK, userInterviews)
@@ -109,7 +137,12 @@ func sendEmail(to, subject, body string) {
     }
 }
 
-func interview() {
+func init() {
+    db = ConnectDB()
+    db.AutoMigrate(&Interview{}) // Migrate the Interview struct to the database
+}
+
+func main() {
     r := gin.Default()
 
     // Interview scheduling routes

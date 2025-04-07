@@ -8,6 +8,9 @@ import (
     "net/http"
     "os"
 
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+
     "github.com/gin-gonic/gin"
     "github.com/gorilla/sessions"
     "golang.org/x/oauth2"
@@ -33,14 +36,24 @@ const (
     RoleApplicant  = "applicant"
 )
 
-// Mock database
-var users = map[string]User{}
-
+// User struct for database
 type User struct {
-    ID    string
+    ID    string `gorm:"primaryKey"`
     Name  string
-    Email string
+    Email string `gorm:"unique"`
     Role  string
+}
+
+// Database connection
+var db *gorm.DB
+
+func ConnectDB() *gorm.DB {
+    dsn := "host=localhost user=postgres password=mysecretpassword dbname=postgres port=5431 sslmode=disable"
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        panic("failed to connect to db")
+    }
+    return database
 }
 
 // Login handler (redirects to Google OAuth)
@@ -82,16 +95,22 @@ func callbackHandler(c *gin.Context) {
     }
 
     // Check if user exists in the database
-    user, exists := users[userInfo.Email]
-    if !exists {
-        // Assign default role (applicant) for new users
-        user = User{
-            ID:    userInfo.ID,
-            Name:  userInfo.Name,
-            Email: userInfo.Email,
-            Role:  RoleApplicant,
+    var user User
+    result := db.First(&user, "email = ?", userInfo.Email)
+    if result.Error != nil {
+        if result.Error == gorm.ErrRecordNotFound {
+            // Assign default role (applicant) for new users
+            user = User{
+                ID:    userInfo.ID,
+                Name:  userInfo.Name,
+                Email: userInfo.Email,
+                Role:  RoleApplicant,
+            }
+            db.Create(&user)
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+            return
         }
-        users[userInfo.Email] = user
     }
 
     // Save user info in session
@@ -133,19 +152,34 @@ func dashboardHandler(c *gin.Context) {
 // Super Admin approval handler
 func approveRecruiterHandler(c *gin.Context) {
     email := c.Query("email")
-    user, exists := users[email]
-    if !exists || user.Role != RoleRecruiter {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Recruiter not found"})
+    var user User
+    result := db.First(&user, "email = ?", email)
+    if result.Error != nil {
+        if result.Error == gorm.ErrRecordNotFound {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Recruiter not found"})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+        }
+        return
+    }
+
+    if user.Role != RoleRecruiter {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "User is not a recruiter"})
         return
     }
 
     // Approve recruiter
     user.Role = RoleRecruiter
-    users[email] = user
+    db.Save(&user)
     c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Recruiter %s approved successfully.", email)})
 }
 
-func initOAuth() {
+func init() {
+    db = ConnectDB()
+    db.AutoMigrate(&User{}) // Migrate the User struct to the database
+}
+
+func main() {
     r := gin.Default()
 
     // Authentication routes

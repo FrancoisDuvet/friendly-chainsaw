@@ -5,22 +5,35 @@ import (
     "net/http"
 
     "github.com/gin-gonic/gin"
+    "github.com/google/uuid"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
 )
 
-// Mock database
-var jobs = []Job{}
-var applications = []Application{}
+// Database connection
+var db *gorm.DB
 
+func ConnectDB() *gorm.DB {
+    dsn := "host=localhost user=postgres password=mysecretpassword dbname=postgres port=5431 sslmode=disable"
+    database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        panic("failed to connect to db")
+    }
+    return database
+}
+
+// Job struct for database
 type Job struct {
-    ID          string   `json:"id"`
+    ID          string   `gorm:"primaryKey" json:"id"`
     Title       string   `json:"title"`
     Description string   `json:"description"`
-    Skills      []string `json:"skills"`
+    Skills      []string `gorm:"type:text[]" json:"skills"` // PostgreSQL array type
     CompanyID   string   `json:"company_id"`
 }
 
+// Application struct for database
 type Application struct {
-    ID        string `json:"id"`
+    ID        string `gorm:"primaryKey" json:"id"`
     JobID     string `json:"job_id"`
     Applicant string `json:"applicant"`
     Status    string `json:"status"` // e.g., "Applied", "Interview Scheduled", "Offered"
@@ -35,14 +48,25 @@ func postJobHandler(c *gin.Context) {
     }
 
     // Generate a unique job ID
-    job.ID = fmt.Sprintf("job_%d", len(jobs)+1)
-    jobs = append(jobs, job)
+    job.ID = uuid.New().String()
+
+    // Save to database
+    if err := db.Create(&job).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to post job"})
+        return
+    }
 
     c.JSON(http.StatusCreated, gin.H{"message": "Job posted successfully", "job": job})
 }
 
 // Applicant views all job postings
 func viewJobsHandler(c *gin.Context) {
+    var jobs []Job
+    if err := db.Find(&jobs).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch jobs"})
+        return
+    }
+
     c.JSON(http.StatusOK, jobs)
 }
 
@@ -55,9 +79,14 @@ func applyJobHandler(c *gin.Context) {
     }
 
     // Generate a unique application ID
-    application.ID = fmt.Sprintf("application_%d", len(applications)+1)
+    application.ID = uuid.New().String()
     application.Status = "Applied"
-    applications = append(applications, application)
+
+    // Save to database
+    if err := db.Create(&application).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit application"})
+        return
+    }
 
     c.JSON(http.StatusCreated, gin.H{"message": "Application submitted successfully", "application": application})
 }
@@ -67,13 +96,18 @@ func viewApplicationsHandler(c *gin.Context) {
     applicant := c.Query("applicant")
     var userApplications []Application
 
-    for _, app := range applications {
-        if app.Applicant == applicant {
-            userApplications = append(userApplications, app)
-        }
+    // Fetch applications for the applicant
+    if err := db.Where("applicant = ?", applicant).Find(&userApplications).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch applications"})
+        return
     }
 
     c.JSON(http.StatusOK, userApplications)
+}
+
+func init() {
+    db = ConnectDB()
+    db.AutoMigrate(&Job{}, &Application{}) // Migrate the Job and Application structs to the database
 }
 
 func jpostnapply() {
