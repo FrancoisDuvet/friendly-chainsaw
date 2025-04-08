@@ -5,6 +5,7 @@ import (
     "log"
     "net/smtp"
     "os"
+    "github.com/gin-gonic/gin"
 )
 
 // Notification struct
@@ -75,3 +76,7 @@ func NotifyApplicationStatus(applicantEmail, jobTitle, status string) {
         }
     }()
 	}
+    
+    func SetupNotificationRoutes(r *gin.Engine) {
+        // Add notification-related routes here if needed
+    }

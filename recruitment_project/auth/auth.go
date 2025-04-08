@@ -26,17 +26,14 @@ var googleOAuthConfig = &oauth2.Config{
     Endpoint:     google.Endpoint,
 }
 
-// Session store
 var store = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 
-// User roles
 const (
     RoleSuperAdmin = "super_admin"
     RoleRecruiter  = "recruiter"
     RoleApplicant  = "applicant"
 )
 
-// User struct for database
 type User struct {
     ID    string `gorm:"primaryKey"`
     Name  string
@@ -56,13 +53,13 @@ func ConnectDB() *gorm.DB {
     return database
 }
 
-// Login handler (redirects to Google OAuth)
+//redirection to Google OAuth)
 func loginHandler(c *gin.Context) {
     url := googleOAuthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
     c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
-// OAuth callback handler
+// for OAuth
 func callbackHandler(c *gin.Context) {
     code := c.Query("code")
     if code == "" {
@@ -122,7 +119,6 @@ func callbackHandler(c *gin.Context) {
     c.Redirect(http.StatusSeeOther, "/dashboard")
 }
 
-// Middleware for Role-Based Access Control (RBAC)
 func roleMiddleware(requiredRole string) gin.HandlerFunc {
     return func(c *gin.Context) {
         session, _ := store.Get(c.Request, "session")
@@ -136,7 +132,6 @@ func roleMiddleware(requiredRole string) gin.HandlerFunc {
     }
 }
 
-// Dashboard handler
 func dashboardHandler(c *gin.Context) {
     session, _ := store.Get(c.Request, "session")
     email, _ := session.Values["user_email"].(string)
@@ -149,7 +144,6 @@ func dashboardHandler(c *gin.Context) {
     })
 }
 
-// Super Admin approval handler
 func approveRecruiterHandler(c *gin.Context) {
     email := c.Query("email")
     var user User
@@ -179,17 +173,13 @@ func init() {
     db.AutoMigrate(&User{}) // Migrate the User struct to the database
 }
 
-func main() {
+func SetupAuthRoutes() {
     r := gin.Default()
 
-    // Authentication routes
+    // routes
     r.GET("/auth/login", loginHandler)
     r.GET("/auth/callback", callbackHandler)
-
-    // Dashboard route
     r.GET("/dashboard", dashboardHandler)
-
-    // Super Admin routes
     admin := r.Group("/admin", roleMiddleware(RoleSuperAdmin))
     admin.GET("/approve", approveRecruiterHandler)
 

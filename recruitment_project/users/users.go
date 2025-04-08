@@ -3,6 +3,7 @@ package users
 import (
     "fmt"
     "net/http"
+    "github.com/gin-gonic/gin"
 )
 
 // Mock database
@@ -140,12 +141,17 @@ func createApplicant(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintf(w, "Applicant account created successfully.\n")
 }
 
-func main() {
-    http.HandleFunc("/recruiter/dashboard", recruiterDashboard)
-    http.HandleFunc("/applicant/dashboard", applicantDashboard)
-    http.HandleFunc("/recruiter/create", createRecruiter)
-    http.HandleFunc("/applicant/create", createApplicant)
-
-    fmt.Println("Server started at :8080")
-    http.ListenAndServe(":8080", nil)
+func SetupUserRoutes(r *gin.Engine) {
+    r.GET("/recruiter/dashboard", func(c *gin.Context) {
+        recruiterDashboard(c.Writer, c.Request)
+    })
+    r.GET("/applicant/dashboard", func(c *gin.Context) {
+        applicantDashboard(c.Writer, c.Request)
+    })
+    r.POST("/recruiter/create", func(c *gin.Context) {
+        createRecruiter(c.Writer, c.Request)
+    })
+    r.POST("/applicant/create", func(c *gin.Context) {
+        createApplicant(c.Writer, c.Request)
+    })
 }

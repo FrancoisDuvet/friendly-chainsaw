@@ -142,8 +142,7 @@ func init() {
     db.AutoMigrate(&Interview{}) // Migrate the Interview struct to the database
 }
 
-func main() {
-    r := gin.Default()
+func SetupInterviewRoutes(r *gin.Engine) {
 
     // Interview scheduling routes
     r.POST("/recruiter/schedule", scheduleInterviewHandler) // Recruiter schedules an interview

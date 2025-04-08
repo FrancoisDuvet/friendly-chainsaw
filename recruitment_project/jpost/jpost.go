@@ -110,8 +110,7 @@ func init() {
     db.AutoMigrate(&Job{}, &Application{}) // Migrate the Job and Application structs to the database
 }
 
-func jpostnapply() {
-    r := gin.Default()
+func SetupJobRoutes(r *gin.Engine) {
 
     // Job posting routes
     r.POST("/recruiter/jobs", postJobHandler) // Recruiter posts a job

@@ -1,4 +1,4 @@
-package main
+package cvupload
 
 import (
     "bytes"
@@ -87,12 +87,7 @@ func extractTextFromPDF(filePath string) (string, error) {
     return buf.String(), nil
 }
 
-func uploadcv() {
-    r := gin.Default()
-
-    // CV upload route
+// SetupCVUploadRoutes registers the CV upload route
+func SetupCVUploadRoutes(r *gin.Engine) {
     r.POST("/applicant/upload-cv", uploadCVHandler)
-
-    fmt.Println("Server started at :8080")
-    r.Run(":8080")
 }

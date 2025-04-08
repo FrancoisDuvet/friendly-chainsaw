@@ -9,7 +9,7 @@ import (
     "os"
     "path/filepath"
     "strings"
-
+    "gorm.io/gorm"
     "github.com/gin-gonic/gin"
     "github.com/pdfcpu/pdfcpu/pkg/api"
 )
@@ -160,8 +160,7 @@ func parseResumeSummary(summary string) *Resume {
     return resume
 }
 
-func createresume() {
-    r := gin.Default()
+func SetupResumeRoutes(r *gin.Engine) {
 
     // Resume upload and parsing route
     r.POST("/recruiter/parse-resume", uploadAndParseResumeHandler)
