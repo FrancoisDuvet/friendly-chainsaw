@@ -116,7 +116,17 @@ func callbackHandler(c *gin.Context) {
     session.Values["user_role"] = user.Role
     session.Save(c.Request, c.Writer)
 
-    c.Redirect(http.StatusSeeOther, "/dashboard")
+    switch user.Role {
+    case RoleSuperAdmin:
+        c.Redirect(http.StatusSeeOther, "/admin/dashboard")
+    case RoleRecruiter:
+        c.Redirect(http.StatusSeeOther, "/recruiter/dashboard?id=" + user.ID)
+    case RoleApplicant:
+        c.Redirect(http.StatusSeeOther, "/applicant/dashboard?id=" + user.ID)
+    default:
+        c.Redirect(http.StatusSeeOther, "/login") // fallback
+    }
+    
 }
 
 func roleMiddleware(requiredRole string) gin.HandlerFunc {
@@ -175,6 +185,11 @@ func init() {
 
 func SetupAuthRoutes() {
     r := gin.Default()
+    r.LoadHTMLGlob("templates/*.html") // Load HTML templates
+
+r.GET("/login", func(c *gin.Context) {
+    c.HTML(http.StatusOK, "login.html", nil)
+})
 
     // routes
     r.GET("/auth/login", loginHandler)

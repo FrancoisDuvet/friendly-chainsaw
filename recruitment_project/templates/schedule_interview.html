@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Schedule Interview</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-xl mx-auto bg-white p-6 rounded shadow">
+    <h1 class="text-2xl font-bold mb-4">Schedule an Interview</h1>
+    <form id="interviewForm">
+      <div class="mb-4">
+        <label class="block mb-1">Job ID</label>
+        <input type="text" name="job_id" class="w-full border px-3 py-2 rounded" required>
+      </div>
+      <div class="mb-4">
+        <label class="block mb-1">Applicant Email</label>
+        <input type="email" name="applicant" class="w-full border px-3 py-2 rounded" required>
+      </div>
+      <div class="mb-4">
+        <label class="block mb-1">Scheduled Time</label>
+        <input type="datetime-local" name="scheduled_at" class="w-full border px-3 py-2 rounded" required>
+      </div>
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Schedule</button>
+    </form>
+    <p id="msg" class="mt-4 text-sm text-green-600"></p>
+  </div>
+
+  <script>
+    document.getElementById("interviewForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const form = e.target;
+      const data = {
+        job_id: form.job_id.value,
+        applicant: form.applicant.value,
+        recruiter: "{{.RecruiterEmail}}", // Injected from Go session
+        scheduled_at: form.scheduled_at.value,
+      };
+
+      const res = await fetch("/recruiter/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      const result = await res.json();
+      document.getElementById("msg").textContent = result.message || "Interview scheduled!";
+    });
+  </script>
+</body>
+</html>

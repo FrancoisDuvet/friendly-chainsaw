@@ -1,4 +1,4 @@
-module resume
+module github.com/friendly-chainsaw/recruitment_project/resume
 
 go 1.23.2
 

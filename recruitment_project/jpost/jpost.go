@@ -22,7 +22,6 @@ func ConnectDB() *gorm.DB {
     return database
 }
 
-// Job struct for database
 type Job struct {
     ID          string   `gorm:"primaryKey" json:"id"`
     Title       string   `json:"title"`
@@ -31,7 +30,6 @@ type Job struct {
     CompanyID   string   `json:"company_id"`
 }
 
-// Application struct for database
 type Application struct {
     ID        string `gorm:"primaryKey" json:"id"`
     JobID     string `json:"job_id"`
@@ -78,7 +76,7 @@ func applyJobHandler(c *gin.Context) {
         return
     }
 
-    // Generate a unique application ID
+    // Generate application ID
     application.ID = uuid.New().String()
     application.Status = "Applied"
 

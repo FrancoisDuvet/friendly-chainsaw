@@ -1,4 +1,4 @@
-module cvupload
+module github.com/friendly-chainsaw/recruitment_project/cvupload
 
 go 1.23.2
 

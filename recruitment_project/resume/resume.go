@@ -1,170 +1,280 @@
 package resume
 
 import (
-    "bytes"
-    "encoding/json"
-    "fmt"
-    "io/ioutil"
-    "net/http"
-    "os"
-    "path/filepath"
-    "strings"
-    "gorm.io/gorm"
-    "github.com/gin-gonic/gin"
-    "github.com/pdfcpu/pdfcpu/pkg/api"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
-// Directory to store uploaded resumes
 const uploadDir = "./uploads"
 
-// Ensure the upload directory exists
 func init() {
-    if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-        os.Mkdir(uploadDir, os.ModePerm)
-    }
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.Mkdir(uploadDir, os.ModePerm)
+	}
 }
 
-// Resume struct for parsed data
 type Resume struct {
-    Name       string   `json:"name"`
-    Email      string   `json:"email"`
-    Phone      string   `json:"phone"`
-    Skills     []string `json:"skills"`
-    Education  string   `json:"education"`
-    Experience string   `json:"experience"`
-}
-
-// Upload and parse resume handler
-func uploadAndParseResumeHandler(c *gin.Context) {
-    // Parse the uploaded file
-    file, err := c.FormFile("resume")
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to upload file"})
-        return
-    }
-
-    // Ensure the file is a PDF
-    if !strings.HasSuffix(file.Filename, ".pdf") {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Only PDF files are allowed"})
-        return
-    }
-
-    // Save the file to the uploads directory
-    filePath := filepath.Join(uploadDir, file.Filename)
-    if err := c.SaveUploadedFile(file, filePath); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
-        return
-    }
-
-    // Extract text from the PDF
-    text, err := extractTextFromPDF(filePath)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to extract text from PDF"})
-        return
-    }
-
-    // Call Google Gemini API for parsing
-    parsedResume, err := callGeminiAPI(text)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse resume"})
-        return
-    }
-
-    c.JSON(http.StatusOK, gin.H{"message": "Resume parsed successfully", "data": parsedResume})
-}
-
-// Extract text from a PDF file
-func extractTextFromPDF(filePath string) (string, error) {
-    var buf bytes.Buffer
-
-    // Use pdfcpu to extract text from the PDF
-    err := api.ExtractTextFile(filePath, &buf, nil)
-    if err != nil {
-        return "", err
-    }
-
-    return buf.String(), nil
-}
-
-// Call Google Gemini API for resume parsing
-func callGeminiAPI(resumeText string) (*Resume, error) {
-    apiKey := os.Getenv("GEMINI_API_KEY")
-    if apiKey == "" {
-        return nil, fmt.Errorf("Gemini API key not found in environment variables")
-    }
-
-    // Prepare the request payload
-    payload := map[string]string{
-        "prompt": fmt.Sprintf("Summarize the following resume and extract key details such as name, email, phone, skills, education, and experience:\n\n%s", resumeText),
-    }
-    payloadBytes, err := json.Marshal(payload)
-    if err != nil {
-        return nil, err
-    }
-
-    // Make the API request
-    req, err := http.NewRequest("POST", "https://gemini.googleapis.com/v1/summarize", bytes.NewBuffer(payloadBytes))
-    if err != nil {
-        return nil, err
-    }
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
-
-    // Read and parse the response
-    if resp.StatusCode != http.StatusOK {
-        body, _ := ioutil.ReadAll(resp.Body)
-        return nil, fmt.Errorf("Gemini API error: %s", string(body))
-    }
-
-    var result struct {
-        Summary string `json:"summary"`
-    }
-    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        return nil, err
-    }
-
-    // Parse the summary into a Resume struct
-    parsedResume := parseResumeSummary(result.Summary)
-    return parsedResume, nil
-}
-
-// Parse the summary text into a Resume struct
-func parseResumeSummary(summary string) *Resume {
-    // This is a simple example. You can improve this logic to extract details more accurately.
-    lines := strings.Split(summary, "\n")
-    resume := &Resume{}
-
-    for _, line := range lines {
-        if strings.Contains(strings.ToLower(line), "name:") {
-            resume.Name = strings.TrimSpace(strings.Split(line, ":")[1])
-        } else if strings.Contains(strings.ToLower(line), "email:") {
-            resume.Email = strings.TrimSpace(strings.Split(line, ":")[1])
-        } else if strings.Contains(strings.ToLower(line), "phone:") {
-            resume.Phone = strings.TrimSpace(strings.Split(line, ":")[1])
-        } else if strings.Contains(strings.ToLower(line), "skills:") {
-            resume.Skills = strings.Split(strings.TrimSpace(strings.Split(line, ":")[1]), ",")
-        } else if strings.Contains(strings.ToLower(line), "education:") {
-            resume.Education = strings.TrimSpace(strings.Split(line, ":")[1])
-        } else if strings.Contains(strings.ToLower(line), "experience:") {
-            resume.Experience = strings.TrimSpace(strings.Split(line, ":")[1])
-        }
-    }
-
-    return resume
+	Name       string   `json:"name"`
+	Email      string   `json:"email"`
+	Phone      string   `json:"phone"`
+	Skills     []string `json:"skills"`
+	Education  string   `json:"education"`
+	Experience string   `json:"experience"`
 }
 
 func SetupResumeRoutes(r *gin.Engine) {
+	r.POST("/recruiter/parse-resume", uploadAndParseResumeHandler)
+    // For applicants
+    r.GET("/applicant/upload-resume", func(c *gin.Context) {
+	c.HTML(http.StatusOK, "upload_resume.html", nil)
+    r.POST("/recruiter/summarize-resume", summarizeResumeHandler)
+})
 
-    // Resume upload and parsing route
-    r.POST("/recruiter/parse-resume", uploadAndParseResumeHandler)
+// For recruiters
+r.GET("/recruiter/resume-parser", func(c *gin.Context) {
+	c.HTML(http.StatusOK, "upload_resume.html", gin.H{
+		"RecruiterMode": true,
+	})
+})
 
-    fmt.Println("Server started at :8080")
-    r.Run(":8080")
+}
+
+// Recruiter uploads + parses resume using Gemini
+func uploadAndParseResumeHandler(c *gin.Context) {
+	file, err := c.FormFile("resume")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to upload file"})
+		return
+	}
+
+	if !strings.HasSuffix(file.Filename, ".pdf") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only PDF files are allowed"})
+		return
+	}
+
+	filePath := filepath.Join(uploadDir, file.Filename)
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	text, err := extractTextFromPDF(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to extract text"})
+		return
+	}
+
+	resumeData, err := callGeminiAPI(text)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gemini parsing failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Resume parsed", "data": resumeData})
+}
+
+func extractTextFromPDF(filePath string) (string, error) {
+	var buf bytes.Buffer
+	if err := api.ExtractTextFile(filePath, &buf, nil, nil); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// parsing
+func callGeminiAPI(text string) (*Resume, error) {
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("Missing Gemini API key")
+	}
+
+	// Gemini model: text-bison or gemini-pro
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + apiKey
+
+	reqBody := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"parts": []map[string]string{
+					{
+						"text": fmt.Sprintf(`Extract structured resume info as JSON:
+						
+%s
+
+Output format:
+{
+  "name": "...",
+  "email": "...",
+  "phone": "...",
+  "skills": [...],
+  "education": "...",
+  "experience": "..."
+}`, text),
+					},
+				},
+			},
+		},
+	}
+
+	jsonData, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Gemini API error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Gemini error: %s", string(body))
+	}
+
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Candidates) == 0 {
+		return nil, fmt.Errorf("No candidates returned")
+	}
+
+	rawJSON := result.Candidates[0].Content.Parts[0].Text
+
+	// Parse raw JSON
+	var resume Resume
+	if err := json.Unmarshal([]byte(rawJSON), &resume); err != nil {
+		return nil, fmt.Errorf("Invalid JSON from Gemini: %s", rawJSON)
+	}
+
+	return &resume, nil
+}
+
+func summarizeResumeHandler(c *gin.Context) {
+	file, err := c.FormFile("resume")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Resume not uploaded"})
+		return
+	}
+
+	path := filepath.Join("uploads", file.Filename)
+	if err := c.SaveUploadedFile(file, path); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Upload failed"})
+		return
+	}
+
+	text, err := extractTextFromPDF(path)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Text extraction failed"})
+		return
+	}
+
+	summary, err := getGeminiSummary(text)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, summary)
+}
+func getGeminiSummary(resumeText string) (map[string]interface{}, error) {
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + apiKey
+
+	prompt := fmt.Sprintf(`
+Please analyze the following resume and summarize the candidate's key information for a recruiter.
+Return only the important information in JSON format using this structure:
+
+{
+  "name": "Full Name",
+  "email": "Email Address",
+  "phone": "Phone Number",
+  "summary": "2–3 line overview of experience and skills",
+  "skills": ["Skill 1", "Skill 2"],
+  "education": "Highest relevant education",
+  "experience": "Recent jobs, years, and companies"
+}
+
+Resume Content:
+%s`, resumeText)
+
+	body := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{"parts": []map[string]string{{"text": prompt}}},
+		},
+	}
+	jsonData, _ := json.Marshal(body)
+
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				}
+			}
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Candidates) == 0 {
+		return nil, fmt.Errorf("No response from Gemini")
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Candidates[0].Content.Parts[0].Text), &parsed); err != nil {
+		return nil, fmt.Errorf("Failed to parse JSON from Gemini output")
+	}
+
+	return parsed, nil
+}
+
+func parseResumeSummary(summary string) *Resume {
+	lines := strings.Split(summary, "\n")
+	res := &Resume{}
+
+	for _, line := range lines {
+		if strings.Contains(line, "Name:") {
+			res.Name = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		} else if strings.Contains(line, "Email:") {
+			res.Email = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		} else if strings.Contains(line, "Phone:") {
+			res.Phone = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		} else if strings.Contains(line, "Skills:") {
+			res.Skills = strings.Split(strings.TrimSpace(strings.SplitN(line, ":", 2)[1]), ",")
+		} else if strings.Contains(line, "Education:") {
+			res.Education = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		} else if strings.Contains(line, "Experience:") {
+			res.Experience = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+		}
+	}
+	return res
 }

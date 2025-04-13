@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Respond to Interview</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-xl mx-auto bg-white p-6 rounded shadow">
+    <h1 class="text-2xl font-bold mb-4">Respond to Interview</h1>
+    <form id="responseForm">
+      <div class="mb-4">
+        <label class="block mb-1">Interview ID</label>
+        <input type="text" name="interview_id" class="w-full border px-3 py-2 rounded" required>
+      </div>
+      <div class="mb-4">
+        <label class="block mb-1">Action</label>
+        <select name="action" class="w-full border px-3 py-2 rounded" onchange="toggleTimeField(this)">
+          <option value="accept">Accept</option>
+          <option value="propose">Propose New Time</option>
+        </select>
+      </div>
+      <div class="mb-4" id="newTimeField" style="display: none;">
+        <label class="block mb-1">New Proposed Time</label>
+        <input type="datetime-local" name="proposed_time" class="w-full border px-3 py-2 rounded">
+      </div>
+      <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Submit</button>
+    </form>
+    <p id="msg" class="mt-4 text-sm text-green-600"></p>
+  </div>
+
+  <script>
+    function toggleTimeField(select) {
+      document.getElementById("newTimeField").style.display = select.value === "propose" ? "block" : "none";
+    }
+
+    document.getElementById("responseForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const form = e.target;
+      const data = {
+        interview_id: form.interview_id.value,
+        action: form.action.value,
+        proposed_time: form.proposed_time ? form.proposed_time.value : ""
+      };
+
+      const res = await fetch("/applicant/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      const result = await res.json();
+      document.getElementById("msg").textContent = result.message || "Response submitted!";
+    });
+  </script>
+</body>
+</html>

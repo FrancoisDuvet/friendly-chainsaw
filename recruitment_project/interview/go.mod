@@ -1,4 +1,4 @@
-module interview
+module github.com/friendly-chainsaw/recruitment_project/interview
 
 go 1.23.2
 

@@ -1,157 +1,214 @@
 package users
 
 import (
-    "fmt"
-    "net/http"
-    "github.com/gin-gonic/gin"
+	"fmt"
+	"html/template"
+	"strings"
+	"net/http"
+	"github.com/gorilla/sessions"
+	"github.com/FrancoisDuvet/friendly-chainsaw/recruitment_project/middleware"
+	"github.com/gin-gonic/gin"
+	"github.com/FrancoisDuvet/friendly-chainsaw/recruitment_project/notifs"
 )
 
-// Mock database
-var recruiters = map[string]Recruiter{}
-var applicants = map[string]Applicant{}
-var companies = map[string]Company{}
+var store = sessions.NewCookieStore([]byte("secret-key")) // Replace "secret-key" with a secure key
+var Recruiters = map[string]Recruiter{}
+var Applicants = map[string]Applicant{}
+var Companies = map[string]Company{}
+var Jobs = []Job{
+	{
+		ID:          "job1",
+		Title:       "Backend Developer",
+		Description: "Build backend systems with Go.",
+		Skills:      []string{"Go", "PostgreSQL", "Docker"},
+		CompanyID:   "company_1",
+	},
+}
 
+//Data Models
 type Recruiter struct {
-    ID          string
-    Name        string
-    Email       string
-    CompanyID   string
-    IsApproved  bool
-    JobPostings []Job
+	ID          string
+	Name        string
+	Email       string
+	CompanyID   string
+	IsApproved  bool
+	JobPostings []Job
 }
 
 type Applicant struct {
-    ID       string
-    Name     string
-    Email    string
-    Skills   []string
-    Resume   string
-    AppliedJobs []string
+	ID          string
+	Name        string
+	Email       string
+	Skills      []string
+	Resume      string
+	AppliedJobs []string
+	Following   []string
+	StatusMap   map[string]string // jobID → status (e.g., “Under Review”)
 }
 
+
 type Company struct {
-    ID          string
-    Title       string
-    Description string
-    Logo        string
-    IsApproved  bool
+	ID          string
+	Title       string
+	Description string
+	Logo        string
+	IsApproved  bool
 }
 
 type Job struct {
-    ID          string
-    Title       string
-    Description string
-    Skills      []string
-    CompanyID   string
+	ID          string
+	Title       string
+	Description string
+	Skills      []string
+	CompanyID   string
 }
 
-// Recruiter Dashboard Handler
-func recruiterDashboard(w http.ResponseWriter, r *http.Request) {
-    recruiterID := r.URL.Query().Get("id")
-    recruiter, exists := recruiters[recruiterID]
-    if !exists || !recruiter.IsApproved {
-        http.Error(w, "Recruiter not found or not approved", http.StatusForbidden)
-        return
-    }
+func followCompanyHandler(c *gin.Context) {
+	session, _ := store.Get(c.Request, "session")
+	email := session.Values["user_email"].(string)
+	companyID := c.Query("company_id")
 
-    fmt.Fprintf(w, "Welcome to the Recruiter Dashboard, %s\n", recruiter.Name)
-    fmt.Fprintf(w, "Your Job Postings:\n")
-    for _, job := range recruiter.JobPostings {
-        fmt.Fprintf(w, "- %s: %s\n", job.Title, job.Description)
-    }
+	applicant, exists := Applicants[email]
+	if !exists {
+		c.String(http.StatusNotFound, "Applicant not found")
+		return
+	}
+
+	// Avoid duplicate follows
+	for _, cid := range applicant.Following {
+		if cid == companyID {
+			c.String(http.StatusOK, "Already following")
+			return
+		}
+	}
+
+	applicant.Following = append(applicant.Following, companyID)
+	Applicants[email] = applicant
+
+	c.String(http.StatusOK, "Company followed!")
 }
 
-// Applicant Dashboard Handler
-func applicantDashboard(w http.ResponseWriter, r *http.Request) {
-    applicantID := r.URL.Query().Get("id")
-    applicant, exists := applicants[applicantID]
-    if !exists {
-        http.Error(w, "Applicant not found", http.StatusNotFound)
-        return
-    }
+//Recruiter Dashboard HTML rendering
+func recruiterDashboard(c *gin.Context) {
+	email := c.MustGet("user_email").(string)
 
-    fmt.Fprintf(w, "Welcome to the Applicant Dashboard, %s\n", applicant.Name)
-    fmt.Fprintf(w, "Your Skills: %v\n", applicant.Skills)
-    fmt.Fprintf(w, "Your Applied Jobs: %v\n", applicant.AppliedJobs)
+	var recruiter Recruiter
+	for _, r := range Recruiters {
+		if r.Email == email {
+			recruiter = r
+			break
+		}
+	}
+
+	if !recruiter.IsApproved {
+		c.String(http.StatusForbidden, "Recruiter not approved")
+		return
+	}
+
+	c.HTML(http.StatusOK, "recruiter_dashboard.html", gin.H{
+		"Name":        recruiter.Name,
+		"JobPostings": recruiter.JobPostings,
+	})
 }
 
-// Create Recruiter Account Handler
-func createRecruiter(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-        return
-    }
+// Applicant Dashboard HTML rendering
+func applicantDashboard(c *gin.Context) {
+	email := c.MustGet("user_email").(string)
 
-    // Parse form data
-    r.ParseForm()
-    name := r.FormValue("name")
-    email := r.FormValue("email")
-    companyTitle := r.FormValue("company_title")
-    companyDescription := r.FormValue("company_description")
-    companyLogo := r.FormValue("company_logo")
+	var applicant Applicant
+	for _, a := range Applicants {
+		if a.Email == email {
+			applicant = a
+			break
+		}
+	}
 
-    // Create company
-    companyID := fmt.Sprintf("company_%d", len(companies)+1)
-    company := Company{
-        ID:          companyID,
-        Title:       companyTitle,
-        Description: companyDescription,
-        Logo:        companyLogo,
-        IsApproved:  false, // Super Admin approval required
-    }
-    companies[companyID] = company
-
-    // Create recruiter
-    recruiterID := fmt.Sprintf("recruiter_%d", len(recruiters)+1)
-    recruiter := Recruiter{
-        ID:         recruiterID,
-        Name:       name,
-        Email:      email,
-        CompanyID:  companyID,
-        IsApproved: false, // Super Admin approval required
-    }
-    recruiters[recruiterID] = recruiter
-
-    fmt.Fprintf(w, "Recruiter account created. Awaiting Super Admin approval.\n")
+	c.HTML(http.StatusOK, "applicant_dashboard.html", gin.H{
+		"Name": applicant.Name,
+		"Jobs": Jobs,
+	})
 }
 
-// Create Applicant Account Handler
-func createApplicant(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-        return
-    }
+func createRecruiter(c *gin.Context) {
+	c.Request.ParseForm()
+	name := c.PostForm("name")
+	email := c.PostForm("email")
+	companyTitle := c.PostForm("company_title")
+	companyDescription := c.PostForm("company_description")
+	companyLogo := c.PostForm("company_logo")
 
-    // Parse form data
-    r.ParseForm()
-    name := r.FormValue("name")
-    email := r.FormValue("email")
-    skills := r.Form["skills"]
+	companyID := fmt.Sprintf("company_%d", len(Companies)+1)
+	Companies[companyID] = Company{
+		ID:          companyID,
+		Title:       companyTitle,
+		Description: companyDescription,
+		Logo:        companyLogo,
+		IsApproved:  false,
+	}
 
-    // Create applicant
-    applicantID := fmt.Sprintf("applicant_%d", len(applicants)+1)
-    applicant := Applicant{
-        ID:     applicantID,
-        Name:   name,
-        Email:  email,
-        Skills: skills,
-    }
-    applicants[applicantID] = applicant
+	recruiterID := fmt.Sprintf("recruiter_%d", len(Recruiters)+1)
+	Recruiters[recruiterID] = Recruiter{
+		ID:         recruiterID,
+		Name:       name,
+		Email:      email,
+		CompanyID:  companyID,
+		IsApproved: false,
+	}
 
-    fmt.Fprintf(w, "Applicant account created successfully.\n")
+	c.String(http.StatusCreated, "Recruiter account created. Awaiting Super Admin approval.")
+}
+
+
+func createApplicant(c *gin.Context) {
+	c.Request.ParseForm()
+	name := c.PostForm("name")
+	email := c.PostForm("email")
+	skills := c.PostFormArray("skills")
+
+	applicantID := fmt.Sprintf("applicant_%d", len(Applicants)+1)
+	Applicants[applicantID] = Applicant{
+		ID:     applicantID,
+		Name:   name,
+		Email:  email,
+		Skills: skills,
+	}
+
+	c.String(http.StatusCreated, "Applicant account created successfully.")
+}
+
+func updateApplicationStatusHandler(c *gin.Context) {
+	jobID := c.PostForm("job_id")
+	applicantID := c.PostForm("applicant_id")
+	newStatus := c.PostForm("status")
+
+	app, exists := Applicants[applicantID]
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Applicant not found"})
+		return
+	}
+
+	if app.StatusMap == nil {
+		app.StatusMap = make(map[string]string)
+	}
+	app.StatusMap[jobID] = newStatus
+	Applicants[applicantID] = app
+
+	go notifs.NotifyApplicationStatus(applicantID, jobID, newStatus)
+	c.JSON(http.StatusOK, gin.H{"message": "Status updated!"})
+}
+
+
+//for template (function map)
+var funcMap = template.FuncMap{
+	"join": strings.Join,
 }
 
 func SetupUserRoutes(r *gin.Engine) {
-    r.GET("/recruiter/dashboard", func(c *gin.Context) {
-        recruiterDashboard(c.Writer, c.Request)
-    })
-    r.GET("/applicant/dashboard", func(c *gin.Context) {
-        applicantDashboard(c.Writer, c.Request)
-    })
-    r.POST("/recruiter/create", func(c *gin.Context) {
-        createRecruiter(c.Writer, c.Request)
-    })
-    r.POST("/applicant/create", func(c *gin.Context) {
-        createApplicant(c.Writer, c.Request)
-    })
+    userRoutes := r.Group("/", middleware.RequireSession())
+    userRoutes.GET("/recruiter/dashboard", recruiterDashboard)
+    userRoutes.GET("/applicant/dashboard", applicantDashboard)
+    r.POST("/recruiter/create", createRecruiter)
+    r.POST("/applicant/create", createApplicant)
+	r.POST("/recruiter/update-status", updateApplicationStatusHandler)
+	r.POST("/applicant/follow", followCompanyHandler)
 }

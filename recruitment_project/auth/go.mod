@@ -1,4 +1,4 @@
-module auth
+module github.com/friendly-chainsaw/recruitment_project/auth
 
 go 1.23.2
 

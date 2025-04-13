@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recruitr Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+  <!-- Navbar -->
+  <header class="bg-gray-800 text-white p-4 shadow">
+    <div class="max-w-7xl mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Recruitr</h1>
+      <nav class="space-x-4">
+        <a href="/dashboard" class="hover:underline">Dashboard</a>
+        <a href="/logout" class="hover:underline">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto p-6">
+    <!-- Tabs -->
+    <div class="mb-6">
+      <ul class="flex space-x-4 border-b">
+        <li><a href="#jobs" class="py-2 px-4 inline-block text-blue-600 border-b-2 border-blue-600">Job Posts</a></li>
+        <li><a href="#applicants" class="py-2 px-4 inline-block text-gray-600 hover:text-blue-600">Applicants</a></li>
+        <li><a href="#interviews" class="py-2 px-4 inline-block text-gray-600 hover:text-blue-600">Interviews</a></li>
+      </ul>
+    </div>
+
+    <!-- Section Content -->
+    <section id="jobs">
+      <h2 class="text-2xl font-semibold mb-4">Your Job Postings</h2>
+
+      {{range .Jobs}}
+      <div class="bg-white p-4 rounded shadow mb-4">
+        <h3 class="text-lg font-semibold">{{.Title}}</h3>
+        <p class="text-gray-700">{{.Description}}</p>
+        <p class="mt-2 text-sm text-gray-500">Skills: {{join .Skills ", "}}</p>
+        <p class="mt-1 text-sm text-gray-500">Company: {{.CompanyName}}</p>
+        <p class="mt-1 text-sm text-gray-500">Location: {{.Location}}</p>
+      </div>
+      {{else}}
+      <div class="bg-white p-4 rounded shadow">No job postings yet.</div>
+      {{end}}
+
+    </section>
+
+    <section id="applicants" class="hidden">
+      <h2 class="text-2xl font-semibold mb-4">Applicants</h2>
+
+      {{range .Applicants}}
+      <div class="bg-white p-4 rounded shadow mb-4">
+        <h3 class="text-lg font-semibold">{{.Name}}</h3>
+        <p>Email: {{.Email}}</p>
+        <p>Skills: {{join .Skills ", "}}</p>
+
+        <form action="/recruiter/update-status" method="POST" class="mt-4 flex gap-2 items-center">
+          <input type="hidden" name="applicant_id" value="{{.ID}}">
+          <input type="hidden" name="job_id" value="{{.AppliedJobID}}">
+
+          <label for="status" class="font-medium">Status:</label>
+          <select name="status" class="border px-2 py-1 rounded">
+            <option disabled selected>Update Status</option>
+            <option value="Under Review">Under Review</option>
+            <option value="Interview Scheduled">Interview Scheduled</option>
+            <option value="Offered">Offered</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+
+          <button type="submit" class="bg-blue-500 text-white px-3 py-1 rounded">Update</button>
+        </form>
+      </div>
+      {{else}}
+      <div class="bg-white p-4 rounded shadow">No applicants yet.</div>
+      {{end}}
+
+    </section>
+
+    <section id="interviews" class="hidden">
+      <h2 class="text-2xl font-semibold mb-4">Scheduled Interviews</h2>
+
+      {{range .Interviews}}
+      <div class="bg-white p-4 rounded shadow mb-4">
+        <h3 class="text-lg font-semibold">{{.ApplicantName}}</h3>
+        <p class="text-gray-700">Interview for {{.JobTitle}}</p>
+        <p class="text-sm text-gray-500">Scheduled At: {{.ScheduledAt}}</p>
+        <p class="text-sm text-gray-500">Status: {{.Status}}</p>
+      </div>
+      {{else}}
+      <div class="bg-white p-4 rounded shadow">No interviews yet.</div>
+      {{end}}
+
+    </section>
+  </main>
+
+  <script>
+    // Tab navigation logic
+    const tabs = document.querySelectorAll('a[href^="#"]');
+    const sections = document.querySelectorAll('main section');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = document.querySelector(tab.getAttribute('href'));
+        sections.forEach(s => s.classList.add('hidden'));
+        target.classList.remove('hidden');
+
+        tabs.forEach(t => t.classList.remove('text-blue-600', 'border-blue-600'));
+        tab.classList.add('text-blue-600', 'border-blue-600');
+      });
+    });
+  </script>
+</body>
+</html>

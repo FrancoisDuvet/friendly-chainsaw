@@ -1,4 +1,4 @@
-module jpost
+module github.com/friendly-chainsaw/recruitment_project/jpost
 
 go 1.23.2
 
