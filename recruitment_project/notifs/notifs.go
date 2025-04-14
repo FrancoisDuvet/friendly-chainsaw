@@ -62,8 +62,10 @@ func NotifyJobAlert(applicantID, companyName, jobTitle string) {
 	}()
 	for _, applicant := range users.Applicants {
 		for _, followed := range applicant.Following {
-			if followed == users.job.CompanyID {
-				NotifyJobAlert(applicant.ID, users.company.Title, users.job.Title)
+			for _, job := range users.Jobs {
+				if followed == job.CompanyID {
+					NotifyJobAlert(applicant.ID, users.Companies[job.CompanyID].Title, job.Title)
+				}
 			}
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/FrancoisDuvet/friendly-chainsaw/recruitment_project/middleware"
 	"github.com/gin-gonic/gin"
-	"github.com/FrancoisDuvet/friendly-chainsaw/recruitment_project/notifs"
 )
 
 var store = sessions.NewCookieStore([]byte("secret-key")) // Replace "secret-key" with a secure key
@@ -193,7 +192,6 @@ func updateApplicationStatusHandler(c *gin.Context) {
 	app.StatusMap[jobID] = newStatus
 	Applicants[applicantID] = app
 
-	go notifs.NotifyApplicationStatus(applicantID, jobID, newStatus)
 	c.JSON(http.StatusOK, gin.H{"message": "Status updated!"})
 }
 

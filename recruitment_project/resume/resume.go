@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 	"github.com/gin-gonic/gin"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
@@ -33,18 +32,18 @@ type Resume struct {
 
 func SetupResumeRoutes(r *gin.Engine) {
 	r.POST("/recruiter/parse-resume", uploadAndParseResumeHandler)
-    // For applicants
-    r.GET("/applicant/upload-resume", func(c *gin.Context) {
-	c.HTML(http.StatusOK, "upload_resume.html", nil)
-    r.POST("/recruiter/summarize-resume", summarizeResumeHandler)
-})
-
-// For recruiters
-r.GET("/recruiter/resume-parser", func(c *gin.Context) {
-	c.HTML(http.StatusOK, "upload_resume.html", gin.H{
-		"RecruiterMode": true,
+	// For applicants
+	r.GET("/applicant/upload-resume", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "upload_resume.html", nil)
+		r.POST("/recruiter/summarize-resume", summarizeResumeHandler)
 	})
-})
+
+	// For recruiters
+	r.GET("/recruiter/resume-parser", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "upload_resume.html", gin.H{
+			"RecruiterMode": true,
+		})
+	})
 
 }
 
@@ -83,18 +82,29 @@ func uploadAndParseResumeHandler(c *gin.Context) {
 }
 
 func extractTextFromPDF(filePath string) (string, error) {
-	var buf bytes.Buffer
-	if err := api.ExtractTextFile(filePath, &buf, nil, nil); err != nil {
+	tempFile, err := ioutil.TempFile("", "extracted-*.txt")
+	if err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	defer os.Remove(tempFile.Name())
+
+	if err := api.ExtractContentFile(filePath, tempFile.Name(), nil, nil); err != nil {
+		return "", err
+	}
+
+	content, err := ioutil.ReadFile(tempFile.Name())
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
 }
 
 // parsing
 func callGeminiAPI(text string) (*Resume, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("Missing Gemini API key")
+		return nil, fmt.Errorf("missing Gemini API key")
 	}
 
 	// Gemini model: text-bison or gemini-pro
@@ -251,10 +261,26 @@ Resume Content:
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(result.Candidates[0].Content.Parts[0].Text), &parsed); err != nil {
-		return nil, fmt.Errorf("Failed to parse JSON from Gemini output")
+		return nil, fmt.Errorf("failed to parse JSON from Gemini output")
 	}
 
 	return parsed, nil
+}
+
+func ValidateResume(path string) error {
+    text, err := extractTextFromPDF(path)
+    if err != nil {
+        return fmt.Errorf("PDF parsing failed: %v", err)
+    }
+
+    required := []string{"name", "skills", "education"}
+    for _, field := range required {
+        if !strings.Contains(strings.ToLower(text), field) {
+            return fmt.Errorf("missing field: %s", field)
+        }
+    }
+
+    return nil
 }
 
 func parseResumeSummary(summary string) *Resume {
