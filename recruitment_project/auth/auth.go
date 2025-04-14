@@ -4,7 +4,6 @@ import (
     "context"
     "encoding/json"
     "fmt"
-    "log"
     "net/http"
     "os"
 
@@ -183,21 +182,20 @@ func init() {
     db.AutoMigrate(&User{}) // Migrate the User struct to the database
 }
 
-func SetupAuthRoutes() {
-    r := gin.Default()
-    r.LoadHTMLGlob("templates/*.html") // Load HTML templates
+func SetupAuthRoutes(r *gin.Engine) {
+	// Route to login page
+	r.GET("/login", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "login.html", nil)
+	})
 
-r.GET("/login", func(c *gin.Context) {
-    c.HTML(http.StatusOK, "login.html", nil)
-})
+	// OAuth and dashboard routes
+	r.GET("/auth/login", loginHandler)
+	r.GET("/auth/callback", callbackHandler)
+	r.GET("/dashboard", dashboardHandler)
 
-    // routes
-    r.GET("/auth/login", loginHandler)
-    r.GET("/auth/callback", callbackHandler)
-    r.GET("/dashboard", dashboardHandler)
-    admin := r.Group("/admin", roleMiddleware(RoleSuperAdmin))
-    admin.GET("/approve", approveRecruiterHandler)
+	// SuperAdmin-only routes
+	admin := r.Group("/admin", roleMiddleware(RoleSuperAdmin))
+	admin.GET("/approve", approveRecruiterHandler)
 
-    fmt.Println("Server started at :8080")
-    log.Fatal(r.Run(":8080"))
+	fmt.Println("[auth] Auth routes registered ✅")
 }
