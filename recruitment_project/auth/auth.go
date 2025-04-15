@@ -208,7 +208,7 @@ func SetupAuthRoutes(r *gin.Engine) {
 
 	// OAuth and dashboard routes
 	r.GET("/auth/google/login", loginHandler)
-	r.GET("/auth/callback", callbackHandler)
+	r.GET("/auth/google/callback", callbackHandler)
 	r.GET("/dashboard", dashboardHandler)
 
 	// SuperAdmin-only routes
